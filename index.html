@@ -50,12 +50,15 @@ button,select,input{font-size:14px;}
 <section id="drumPads" aria-label="Drum launchpad"></section>
 </main>
 <div id="timeline"></div>
+<div id="mixer" class="controls" style="padding:10px"></div>
 <div class="controls" style="padding:10px">
 <button id="exportJSON">Export JSON</button>
 <button id="importJSON">Import JSON</button>
 <input type="file" id="importFile" style="display:none">
 <button id="exportMIDI">Export MIDI</button>
 <button id="exportWAV">Export WAV</button>
+<button id="newProject">New Project</button>
+<button id="revertProject">Revert</button>
 </div>
 <script>
 // Simple utilities
@@ -105,9 +108,10 @@ app.audio = (function(){
 const ctx=new (window.AudioContext||window.webkitAudioContext)();
 const master=ctx.createGain();master.gain.value=0.8;master.connect(ctx.destination);
 const metGain=ctx.createGain();metGain.gain.value=0;metGain.connect(master);
+const trackGains={};['melody','backing','bass','guitar','synth','drums'].forEach(t=>{const g=ctx.createGain();g.gain.value=0.8;g.connect(master);trackGains[t]=g;});
 function metronome(time){const osc=ctx.createOscillator();const g=ctx.createGain();osc.frequency.value=1000;g.gain.value=1;osc.connect(g).connect(metGain);osc.start(time);g.gain.exponentialRampToValueAtTime(0.001,time+0.1);osc.stop(time+0.1);}
 const voices={
-  lead:{type:'sawtooth'},
+  melody:{type:'sawtooth'},
   backing:{type:'square'},
   bass:{type:'sawtooth'},
   guitar:{type:'triangle'},
@@ -289,8 +293,8 @@ document.addEventListener('keydown',e=>{const clip=app.timeline.selected;if(!cli
 const playBtn=document.getElementById('play');playBtn.onclick=()=>{if(app.transport.playing){app.transport.stop();playBtn.textContent='Play';}else{app.transport.start();playBtn.textContent='Stop';}};
 const recBtn=document.getElementById('record');recBtn.onclick=()=>{if(app.recorder.recording){app.recorder.stop();recBtn.textContent='Record';}else{app.recorder.start();recBtn.textContent='Stop Rec';}};
 document.getElementById('metronome').onclick=()=>app.transport.toggleMet();
-document.getElementById('bpm').onchange=e=>app.transport.setTempo(+e.target.value);
-document.getElementById('swing').onchange=e=>app.transport.setSwing(+e.target.value);
+document.getElementById('bpm').onchange=e=>{app.transport.setTempo(+e.target.value);app.saveProject&&app.saveProject();};
+document.getElementById('swing').onchange=e=>{app.transport.setSwing(+e.target.value);app.saveProject&&app.saveProject();};
 const exportBtn=document.getElementById('exportJSON');
 const importBtn=document.getElementById('importJSON');
 const importFile=document.getElementById('importFile');
