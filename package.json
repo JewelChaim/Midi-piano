@@ -3,7 +3,8 @@
   "version": "1.0.0",
   "description": "MIDI songwriter workstation demo",
   "scripts": {
-    "start": "http-server -a 0.0.0.0 -p 3000",
+    "dev": "npx http-server -a 0.0.0.0 -p 3000",
+    "start": "npm run dev",
     "test": "echo \"No tests specified\""
   },
   "keywords": [],
