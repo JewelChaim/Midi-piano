@@ -10,8 +10,9 @@ A simple web-based MIDI songwriter workstation demo.
    ```
 2. Start a local server:
    ```
-   npm start
+   npm run dev
    ```
+   You can also use `npm start`, which runs the same command.
    Open `http://localhost:3000` in your browser.
 
 No automated tests are provided; the `npm test` script is a placeholder.
