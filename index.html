@@ -10,7 +10,10 @@ header{display:flex;align-items:center;justify-content:space-between;padding:10p
 header h1{margin:0;font-size:20px;}
 .controls{display:flex;gap:10px;align-items:center;}
 main{display:flex;flex-wrap:wrap;padding:10px;gap:10px;}
-#melodicPads,#drumPads{background:#fff;border-radius:8px;padding:10px;box-shadow:0 2px 4px rgba(0,0,0,0.1);} 
+#melodicPads,#drumPads{background:#fff;border-radius:8px;padding:10px;box-shadow:0 2px 4px rgba(0,0,0,0.1);}
+#chordPads{display:grid;grid-template-columns:repeat(4,1fr);}
+#notePads{display:flex;flex-wrap:wrap;margin-top:10px;}
+#drumPads{display:grid;grid-template-columns:repeat(4,1fr);}
 .pad{width:60px;height:60px;margin:5px;border:none;border-radius:8px;background:#e0e0e0;cursor:pointer;font-size:14px;position:relative;}
 .pad.active{background:#ffd54f;}
 #timeline{background:#fff;border-radius:8px;padding:10px;margin:10px;box-shadow:0 2px 4px rgba(0,0,0,0.1);} 
@@ -35,13 +38,14 @@ button,select,input{font-size:14px;}
 <label>BPM <input type="number" id="bpm" value="120" style="width:60px"></label>
 <label>Quantize <select id="quantize"><option value="0">Off</option><option value="0.5">1/8</option><option value="0.25">1/16</option><option value="0.125">1/32</option></select></label>
 <label>Swing <input type="range" id="swing" min="0" max="0.5" step="0.01" value="0"></label>
+<label>Velocity <input type="range" id="velocity" min="1" max="127" value="100"></label>
 <button id="play">Play</button>
 <button id="record">Record</button>
 <button id="metronome">Metronome</button>
 </div>
 </header>
 <main>
-<section id="melodicPads" aria-label="Chord and note pads"></section>
+<section id="melodicPads" aria-label="Chord and note pads"><div id="chordPads"></div><div id="notePads"></div></section>
 <section id="drumPads" aria-label="Drum launchpad"></section>
 </main>
 <div id="timeline"></div>
@@ -114,7 +118,15 @@ function playNote(type,note,velocity,time,duration){const v=voices[type]||voices
 function playKick(time,velocity){const osc=ctx.createOscillator();osc.type='sine';const g=ctx.createGain();osc.connect(g).connect(master);osc.frequency.setValueAtTime(120,time);osc.frequency.exponentialRampToValueAtTime(40,time+0.5);g.gain.setValueAtTime(velocity/127,time);g.gain.exponentialRampToValueAtTime(0.001,time+0.5);osc.start(time);osc.stop(time+0.5);}
 function playSnare(time,velocity){const noise=ctx.createBufferSource();const buffer=ctx.createBuffer(1,ctx.sampleRate*0.2,ctx.sampleRate);const data=buffer.getChannelData(0);for(let i=0;i<data.length;i++)data[i]=Math.random()*2-1;noise.buffer=buffer;const bp=ctx.createBiquadFilter();bp.type='bandpass';bp.frequency.value=1800;const g=ctx.createGain();g.gain.setValueAtTime(velocity/127,time);g.gain.exponentialRampToValueAtTime(0.01,time+0.2);noise.connect(bp).connect(g).connect(master);noise.start(time);noise.stop(time+0.2);}
 function playHat(time,velocity,open){const noise=ctx.createBufferSource();const buffer=ctx.createBuffer(1,ctx.sampleRate*0.05,ctx.sampleRate);const data=buffer.getChannelData(0);for(let i=0;i<data.length;i++)data[i]=Math.random()*2-1;noise.buffer=buffer;const hp=ctx.createBiquadFilter();hp.type='highpass';hp.frequency.value=7000;const g=ctx.createGain();g.gain.setValueAtTime(velocity/127,time);g.gain.exponentialRampToValueAtTime(0.01,time+(open?0.3:0.05));noise.connect(hp).connect(g).connect(master);noise.start(time);noise.stop(time+(open?0.3:0.05));}
-const drumMap={kick:playKick,snare:playSnare,closedhat:(t,v)=>playHat(t,v,false),openhat:(t,v)=>playHat(t,v,true)};
+function playTom(time,velocity,freq){const osc=ctx.createOscillator();osc.type='sine';const g=ctx.createGain();osc.connect(g).connect(master);osc.frequency.setValueAtTime(freq,time);g.gain.setValueAtTime(velocity/127,time);g.gain.exponentialRampToValueAtTime(0.001,time+0.3);osc.start(time);osc.stop(time+0.3);}
+function playClap(time,velocity){for(let i=0;i<3;i++){const t=time+i*0.02;const noise=ctx.createBufferSource();const buffer=ctx.createBuffer(1,ctx.sampleRate*0.02,ctx.sampleRate);const data=buffer.getChannelData(0);for(let j=0;j<data.length;j++)data[j]=Math.random()*2-1;noise.buffer=buffer;const g=ctx.createGain();g.gain.setValueAtTime(velocity/127,t);g.gain.exponentialRampToValueAtTime(0.001,t+0.05);noise.connect(g).connect(master);noise.start(t);noise.stop(t+0.05);}}
+function playRim(time,velocity){const osc=ctx.createOscillator();osc.type='square';const g=ctx.createGain();osc.connect(g).connect(master);osc.frequency.setValueAtTime(2000,time);g.gain.setValueAtTime(velocity/127,time);g.gain.exponentialRampToValueAtTime(0.001,time+0.05);osc.start(time);osc.stop(time+0.05);}
+function playRide(time,velocity){playHat(time,velocity,true);}
+function playCrash(time,velocity){playHat(time,velocity,true);}
+function playShaker(time,velocity){playHat(time,velocity,false);}
+function playTamb(time,velocity){playHat(time,velocity,false);}
+function playCowbell(time,velocity){const osc1=ctx.createOscillator();const osc2=ctx.createOscillator();osc1.type=osc2.type='square';const g=ctx.createGain();osc1.frequency.value=540;osc2.frequency.value=800;osc1.connect(g);osc2.connect(g);g.connect(master);g.gain.setValueAtTime(velocity/127,time);g.gain.exponentialRampToValueAtTime(0.001,time+0.2);osc1.start(time);osc2.start(time);osc1.stop(time+0.2);osc2.stop(time+0.2);}
+const drumMap={kick:playKick,snare:playSnare,closedhat:(t,v)=>playHat(t,v,false),openhat:(t,v)=>playHat(t,v,true),tomh:(t,v)=>playTom(t,v,180),tomm:(t,v)=>playTom(t,v,140),toml:(t,v)=>playTom(t,v,100),clap:playClap,rim:playRim,ride:playRide,crash:playCrash,shaker:playShaker,tamb:playTamb,cowbell:playCowbell};
 return{ctx,playNote,metronome,drumMap,metGain};
 })();
 
@@ -136,39 +148,58 @@ return{state,noteOn,noteOff,program};
 /* SCHEDULER & TRANSPORT */
 app.transport=(function(){
 const {ctx,metronome}=app.audio;
-let tempo=120;let lookahead=25;let scheduleAhead=0.1;let currentBeat=0;let nextNoteTime=0;let playing=false;let tickInterval;let swing=0;let metOn=false;
-function nextBeat(){const secPerBeat=60/tempo;nextNoteTime+=secPerBeat;currentBeat++;}
+let tempo=120;let lookahead=25;let scheduleAhead=0.1;let currentBeat=0;let nextNoteTime=0;let playing=false;let tickInterval;let swing=0;let metOn=false;const step=0.25;
+function nextBeat(){const secPerBeat=60/tempo;nextNoteTime+=secPerBeat*step;currentBeat+=step;}
 function scheduler(){while(nextNoteTime<ctx.currentTime+scheduleAhead){if(metOn && currentBeat%1===0)metronome(nextNoteTime);
- app.recorder.playEvents(currentBeat,nextNoteTime);
+ app.recorder.playEvents(currentBeat,nextNoteTime,tempo,swing);
  nextBeat();}}
 function start(){if(playing)return;playing=true;currentBeat=0;nextNoteTime=ctx.currentTime;tickInterval=setInterval(scheduler,lookahead);} 
 function stop(){playing=false;clearInterval(tickInterval);} 
-return{start,stop,setTempo:t=>tempo=t,setSwing:s=>swing=s,get time(){return currentBeat;},toggleMet:()=>{metOn=!metOn;app.audio.metGain.gain.value=metOn?1:0;}};
+return{start,stop,setTempo:t=>tempo=t,setSwing:s=>swing=s,get time(){return currentBeat;},get tempo(){return tempo;},get swing(){return swing;},get playing(){return playing;},toggleMet:()=>{metOn=!metOn;app.audio.metGain.gain.value=metOn?1:0;}};
 })();
 
 /* RECORDER */
 app.recorder=(function(){
 const tracks={melody:[],backing:[],bass:[],guitar:[],synth:[],drums:[]};
 let recording=false;let recordStart=0;function start(){recording=true;recordStart=app.transport.time;} function stop(){recording=false;}
-function record(track,note,velocity){if(!recording)return;const time=app.transport.time-recordStart;tracks[track].push({time,note,velocity});renderClip(track);}
-function playEvents(beat,playTime){for(const name in tracks){tracks[name].forEach(ev=>{const t=ev.time;const dur=0.5; // fixed
- if(Math.abs(t-beat)<0.001){app.audio.playNote(name==='drums'?'lead':name,ev.note,ev.velocity,playTime,dur);} });}}
+function record(track,note,velocity){if(!recording)return;let time=app.transport.time-recordStart;const q=parseFloat(document.getElementById('quantize').value);if(q>0)time=Math.round(time/q)*q;tracks[track].push({time,note,velocity});renderClip(track);}
+function playEvents(beat,playTime,tempo,swing){const q=parseFloat(document.getElementById('quantize').value);const secPerBeat=60/tempo;for(const name in tracks){tracks[name].forEach(ev=>{const t=ev.time;const dur=0.5;if(Math.abs(t-beat)<0.001){let offset=0;if(swing>0&&q>0&&Math.floor((ev.time/q)%2)===1)offset=swing*q;app.audio.playNote(name==='drums'?'lead':name,ev.note,ev.velocity,playTime+offset*secPerBeat,dur);}});}}
 function renderClip(track){const lane=document.querySelector(`.track[data-track="${track}"] .track-content`);if(!lane)return;lane.innerHTML='';tracks[track].forEach(ev=>{const c=el('div',{class:'clip',style:`left:${ev.time*60}px;width:30px;`},track);lane.appendChild(c);});}
-return{start,stop,record,tracks,playEvents};
+return{start,stop,record,tracks,playEvents,renderClip};
 })();
 
 /* UI SETUP */
-(function(){
+ (function(){
 const keys=app.theory.notes;const keySel=document.getElementById('keySelect');keys.forEach(k=>keySel.appendChild(el('option',{html:k})));
 keySel.value='C';
 const scaleSel=document.getElementById('scaleSelect');
-function buildPads(){const container=document.getElementById('melodicPads');container.innerHTML='';const key=keySel.value;const scale=scaleSel.value;const chords=['I','V','vi','IV','ii','iii','vii°','sus2','sus4','maj7','min7','add9'];chords.forEach(ch=>{const b=el('button',{class:'pad',html:ch,role:'button','aria-label':ch});b.addEventListener('mousedown',()=>{
- const notes=app.theory.chord(app.theory.noteName(app.theory.noteNumber(key)),ch,'basic');notes.forEach(n=>app.audio.playNote('lead',n,100,app.audio.ctx.currentTime,0.5));app.recorder.record('melody',notes[0],100);
-});container.appendChild(b);});
-}
+const velocitySlider=document.getElementById('velocity');
+const chordContainer=document.getElementById('chordPads');
+const noteContainer=document.getElementById('notePads');
+function getVelocity(){return +velocitySlider.value;}
+function formatChordLabel(root,quality){switch(quality){case 'vi':case 'ii':case 'iii':return root+'m';case 'vii°':return root+'dim';case 'sus2':case 'sus4':case 'maj7':case 'min7':case 'add9':return root+quality;default:return root;}}
+function buildPads(){chordContainer.innerHTML='';noteContainer.innerHTML='';const key=keySel.value;const scaleName=scaleSel.value;const scale=app.theory.buildScale(key,scaleName);const chords=['I','V','vi','IV','ii','iii','vii°','sus2','sus4','maj7','min7','add9'];const degreeMap={I:0,V:4,vi:5,IV:3,ii:1,iii:2,'vii°':6};chords.forEach(ch=>{const degree=degreeMap[ch]!==undefined?degreeMap[ch]:0;const root=scale[degree];const label=formatChordLabel(root,ch);const b=el('button',{class:'pad',html:label,role:'button','aria-label':label});b.addEventListener('mousedown',()=>{const notes=app.theory.chord(root,ch,'basic');notes.forEach(n=>app.audio.playNote('lead',n,getVelocity(),app.audio.ctx.currentTime,0.5));app.recorder.record('melody',notes[0],getVelocity());});chordContainer.appendChild(b);});scale.forEach(n=>{const b=el('button',{class:'pad',html:n});b.addEventListener('mousedown',()=>{const midi=60+app.theory.noteNumber(n);app.audio.playNote('lead',midi,getVelocity(),app.audio.ctx.currentTime,0.5);app.recorder.record('melody',midi,getVelocity());});noteContainer.appendChild(b);});}
 keySel.onchange=buildPads;scaleSel.onchange=buildPads;buildPads();
 // Drum pads
-const drumNames=['Kick','Snare','Closed Hat','Open Hat'];const drumContainer=document.getElementById('drumPads');drumNames.forEach(name=>{const b=el('button',{class:'pad',html:name});b.addEventListener('mousedown',()=>{const t=app.audio.ctx.currentTime;switch(name){case 'Kick':app.audio.drumMap.kick(t,120);break;case 'Snare':app.audio.drumMap.snare(t,120);break;case 'Closed Hat':app.audio.drumMap.closedhat(t,100);break;case 'Open Hat':app.audio.drumMap.openhat(t,100);break;}app.recorder.record('drums',60,100);});drumContainer.appendChild(b);});
+const drums=[
+ {label:'Kick',key:'kick',note:36},
+ {label:'Snare',key:'snare',note:38},
+ {label:'Closed Hat',key:'closedhat',note:42},
+ {label:'Open Hat',key:'openhat',note:46},
+ {label:'Tom H',key:'tomh',note:50},
+ {label:'Tom M',key:'tomm',note:47},
+ {label:'Tom L',key:'toml',note:45},
+ {label:'Clap',key:'clap',note:39},
+ {label:'Rim',key:'rim',note:37},
+ {label:'Ride',key:'ride',note:51},
+ {label:'Crash',key:'crash',note:49},
+ {label:'Shaker',key:'shaker',note:82},
+ {label:'Tamb',key:'tamb',note:54},
+ {label:'Cowbell',key:'cowbell',note:56},
+ {label:'Perc1',key:'shaker',note:81},
+ {label:'Perc2',key:'tamb',note:55}
+];
+const drumContainer=document.getElementById('drumPads');drums.forEach(d=>{const b=el('button',{class:'pad',html:d.label});b.addEventListener('mousedown',()=>{const t=app.audio.ctx.currentTime;app.audio.drumMap[d.key](t,getVelocity());app.recorder.record('drums',d.note,getVelocity());});drumContainer.appendChild(b);});
 // Timeline
 const tracks=['melody','backing','bass','guitar','synth','drums'];const timeline=document.getElementById('timeline');tracks.forEach(t=>{const row=el('div',{class:'track',"data-track":t});row.appendChild(el('div',{class:'track-label',html:t}));row.appendChild(el('div',{class:'track-content'}));timeline.appendChild(row);});
 // Transport controls
@@ -176,6 +207,13 @@ const playBtn=document.getElementById('play');playBtn.onclick=()=>{if(app.transp
 const recBtn=document.getElementById('record');recBtn.onclick=()=>{if(app.recorder.recording){app.recorder.stop();recBtn.textContent='Record';}else{app.recorder.start();recBtn.textContent='Stop Rec';}};
 document.getElementById('metronome').onclick=()=>app.transport.toggleMet();
 document.getElementById('bpm').onchange=e=>app.transport.setTempo(+e.target.value);
+document.getElementById('swing').onchange=e=>app.transport.setSwing(+e.target.value);
+const exportBtn=document.getElementById('exportJSON');
+const importBtn=document.getElementById('importJSON');
+const importFile=document.getElementById('importFile');
+exportBtn.onclick=()=>{const data={bpm:+document.getElementById('bpm').value,key:keySel.value,scale:scaleSel.value,tracks:app.recorder.tracks};const blob=new Blob([JSON.stringify(data)],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='project.json';a.click();URL.revokeObjectURL(url);};
+importBtn.onclick=()=>importFile.click();
+importFile.onchange=e=>{const file=e.target.files[0];if(!file)return;const reader=new FileReader();reader.onload=()=>{const data=JSON.parse(reader.result);document.getElementById('bpm').value=data.bpm;app.transport.setTempo(data.bpm);keySel.value=data.key;scaleSel.value=data.scale;app.recorder.tracks=data.tracks;buildPads();for(const tr in data.tracks){app.recorder.renderClip(tr);} };reader.readAsText(file);};
 })();
 
 </script>
