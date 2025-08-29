@@ -119,6 +119,7 @@ function playNote(type,note,velocity,time,duration){const v=voices[type]||voices
 function playKick(time,velocity){const osc=ctx.createOscillator();osc.type='sine';const g=ctx.createGain();osc.connect(g).connect(master);osc.frequency.setValueAtTime(120,time);osc.frequency.exponentialRampToValueAtTime(40,time+0.5);g.gain.setValueAtTime(velocity/127,time);g.gain.exponentialRampToValueAtTime(0.001,time+0.5);osc.start(time);osc.stop(time+0.5);}
 function playSnare(time,velocity){const noise=ctx.createBufferSource();const buffer=ctx.createBuffer(1,ctx.sampleRate*0.2,ctx.sampleRate);const data=buffer.getChannelData(0);for(let i=0;i<data.length;i++)data[i]=Math.random()*2-1;noise.buffer=buffer;const bp=ctx.createBiquadFilter();bp.type='bandpass';bp.frequency.value=1800;const g=ctx.createGain();g.gain.setValueAtTime(velocity/127,time);g.gain.exponentialRampToValueAtTime(0.01,time+0.2);noise.connect(bp).connect(g).connect(master);noise.start(time);noise.stop(time+0.2);}
 function playHat(time,velocity,open){const noise=ctx.createBufferSource();const buffer=ctx.createBuffer(1,ctx.sampleRate*0.05,ctx.sampleRate);const data=buffer.getChannelData(0);for(let i=0;i<data.length;i++)data[i]=Math.random()*2-1;noise.buffer=buffer;const hp=ctx.createBiquadFilter();hp.type='highpass';hp.frequency.value=7000;const g=ctx.createGain();g.gain.setValueAtTime(velocity/127,time);g.gain.exponentialRampToValueAtTime(0.01,time+(open?0.3:0.05));noise.connect(hp).connect(g).connect(master);noise.start(time);noise.stop(time+(open?0.3:0.05));}
+function startOpenHat(velocity){const noise=ctx.createBufferSource();const buffer=ctx.createBuffer(1,ctx.sampleRate*0.05,ctx.sampleRate);const data=buffer.getChannelData(0);for(let i=0;i<data.length;i++)data[i]=Math.random()*2-1;noise.buffer=buffer;noise.loop=true;const hp=ctx.createBiquadFilter();hp.type='highpass';hp.frequency.value=7000;const g=ctx.createGain();g.gain.value=velocity/127;noise.connect(hp).connect(g).connect(master);noise.start();return()=>{const t=ctx.currentTime;g.gain.exponentialRampToValueAtTime(0.01,t+0.3);noise.stop(t+0.3);};}
 function playTom(time,velocity,freq){const osc=ctx.createOscillator();osc.type='sine';const g=ctx.createGain();osc.connect(g).connect(master);osc.frequency.setValueAtTime(freq,time);g.gain.setValueAtTime(velocity/127,time);g.gain.exponentialRampToValueAtTime(0.001,time+0.3);osc.start(time);osc.stop(time+0.3);}
 function playClap(time,velocity){for(let i=0;i<3;i++){const t=time+i*0.02;const noise=ctx.createBufferSource();const buffer=ctx.createBuffer(1,ctx.sampleRate*0.02,ctx.sampleRate);const data=buffer.getChannelData(0);for(let j=0;j<data.length;j++)data[j]=Math.random()*2-1;noise.buffer=buffer;const g=ctx.createGain();g.gain.setValueAtTime(velocity/127,t);g.gain.exponentialRampToValueAtTime(0.001,t+0.05);noise.connect(g).connect(master);noise.start(t);noise.stop(t+0.05);}}
 function playRim(time,velocity){const osc=ctx.createOscillator();osc.type='square';const g=ctx.createGain();osc.connect(g).connect(master);osc.frequency.setValueAtTime(2000,time);g.gain.setValueAtTime(velocity/127,time);g.gain.exponentialRampToValueAtTime(0.001,time+0.05);osc.start(time);osc.stop(time+0.05);}
@@ -128,7 +129,7 @@ function playShaker(time,velocity){playHat(time,velocity,false);}
 function playTamb(time,velocity){playHat(time,velocity,false);}
 function playCowbell(time,velocity){const osc1=ctx.createOscillator();const osc2=ctx.createOscillator();osc1.type=osc2.type='square';const g=ctx.createGain();osc1.frequency.value=540;osc2.frequency.value=800;osc1.connect(g);osc2.connect(g);g.connect(master);g.gain.setValueAtTime(velocity/127,time);g.gain.exponentialRampToValueAtTime(0.001,time+0.2);osc1.start(time);osc2.start(time);osc1.stop(time+0.2);osc2.stop(time+0.2);}
 const drumMap={kick:playKick,snare:playSnare,closedhat:(t,v)=>playHat(t,v,false),openhat:(t,v)=>playHat(t,v,true),tomh:(t,v)=>playTom(t,v,180),tomm:(t,v)=>playTom(t,v,140),toml:(t,v)=>playTom(t,v,100),clap:playClap,rim:playRim,ride:playRide,crash:playCrash,shaker:playShaker,tamb:playTamb,cowbell:playCowbell};
-return{ctx,playNote,metronome,drumMap,metGain};
+return{ctx,playNote,metronome,drumMap,metGain,startOpenHat};
 })();
 
 /* MIDI MODULE */
@@ -243,24 +244,24 @@ function buildPads(){chordContainer.innerHTML='';noteContainer.innerHTML='';cons
 keySel.onchange=buildPads;scaleSel.onchange=buildPads;buildPads();
 // Drum pads
 const drums=[
- {label:'Kick',key:'kick',note:36},
- {label:'Snare',key:'snare',note:38},
- {label:'Closed Hat',key:'closedhat',note:42},
- {label:'Open Hat',key:'openhat',note:46},
- {label:'Tom H',key:'tomh',note:50},
- {label:'Tom M',key:'tomm',note:47},
- {label:'Tom L',key:'toml',note:45},
- {label:'Clap',key:'clap',note:39},
- {label:'Rim',key:'rim',note:37},
- {label:'Ride',key:'ride',note:51},
- {label:'Crash',key:'crash',note:49},
- {label:'Shaker',key:'shaker',note:82},
- {label:'Tamb',key:'tamb',note:54},
- {label:'Cowbell',key:'cowbell',note:56},
- {label:'Perc1',key:'shaker',note:81},
- {label:'Perc2',key:'tamb',note:55}
+ {name:'Kick',midiNote:36,synthName:'kick'},
+ {name:'Snare',midiNote:38,synthName:'snare'},
+ {name:'Closed Hat',midiNote:42,synthName:'closedhat'},
+ {name:'Open Hat',midiNote:46,synthName:'openhat'},
+ {name:'Tom H',midiNote:50,synthName:'tomh'},
+ {name:'Tom M',midiNote:47,synthName:'tomm'},
+ {name:'Tom L',midiNote:45,synthName:'toml'},
+ {name:'Clap',midiNote:39,synthName:'clap'},
+ {name:'Rim',midiNote:37,synthName:'rim'},
+ {name:'Ride',midiNote:51,synthName:'ride'},
+ {name:'Crash',midiNote:49,synthName:'crash'},
+ {name:'Shaker',midiNote:82,synthName:'shaker'},
+ {name:'Tamb',midiNote:54,synthName:'tamb'},
+ {name:'Cowbell',midiNote:56,synthName:'cowbell'},
+ {name:'Perc1',midiNote:81,synthName:'shaker'},
+ {name:'Perc2',midiNote:55,synthName:'tamb'}
 ];
-const drumContainer=document.getElementById('drumPads');drums.forEach(d=>{const b=el('button',{class:'pad',html:d.label});b.addEventListener('mousedown',()=>{const t=app.audio.ctx.currentTime;app.audio.drumMap[d.key](t,getVelocity());app.recorder.record('drums',d.note,getVelocity());});drumContainer.appendChild(b);});
+const drumContainer=document.getElementById('drumPads');drums.forEach(d=>{const b=el('button',{class:'pad',html:d.name});let stop; b.addEventListener('mousedown',()=>{const vel=getVelocity();const t=app.audio.ctx.currentTime;if(d.synthName==='openhat'){stop=app.audio.startOpenHat(vel);}else{app.audio.drumMap[d.synthName](t,vel);stop=null;}app.recorder.record('drums',d.midiNote,vel);app.midi.noteOn(9,d.midiNote,vel);if(!stop)setTimeout(()=>app.midi.noteOff(9,d.midiNote),100);});if(d.synthName==='openhat'){['mouseup','mouseleave'].forEach(ev=>b.addEventListener(ev,()=>{if(stop)stop();app.midi.noteOff(9,d.midiNote);}));}drumContainer.appendChild(b);});
 // Timeline
 const tracks=['melody','backing','bass','guitar','synth','drums'];const timeline=document.getElementById('timeline');tracks.forEach(t=>{const row=el('div',{class:'track',"data-track":t});row.appendChild(el('div',{class:'track-label',html:t}));row.appendChild(el('div',{class:'track-content'}));timeline.appendChild(row);});
 app.timeline.render();
