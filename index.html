@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>MIDI Songwriter Workstation</title>
+<style>
+/* Basic reset */
+body{margin:0;font-family:sans-serif;background:#f5f5f5;color:#222;}
+header{display:flex;align-items:center;justify-content:space-between;padding:10px 20px;background:#fff;box-shadow:0 2px 4px rgba(0,0,0,0.1);position:sticky;top:0;z-index:10;}
+header h1{margin:0;font-size:20px;}
+.controls{display:flex;gap:10px;align-items:center;}
+main{display:flex;flex-wrap:wrap;padding:10px;gap:10px;}
+#melodicPads,#drumPads{background:#fff;border-radius:8px;padding:10px;box-shadow:0 2px 4px rgba(0,0,0,0.1);} 
+.pad{width:60px;height:60px;margin:5px;border:none;border-radius:8px;background:#e0e0e0;cursor:pointer;font-size:14px;position:relative;}
+.pad.active{background:#ffd54f;}
+#timeline{background:#fff;border-radius:8px;padding:10px;margin:10px;box-shadow:0 2px 4px rgba(0,0,0,0.1);} 
+.track{position:relative;height:60px;border-bottom:1px solid #ddd;}
+.clip{position:absolute;height:40px;background:#90caf9;border-radius:4px;color:#000;padding:5px;cursor:move;overflow:hidden;}
+.track-label{position:absolute;left:0;top:0;width:80px;height:100%;background:#eee;display:flex;align-items:center;justify-content:center;font-size:12px;}
+.track-content{margin-left:80px;height:100%;position:relative;}
+#timeline{min-height:260px;}
+button,select,input{font-size:14px;}
+@media(max-width:800px){
+  main{flex-direction:column;}
+  #melodicPads,#drumPads{width:100%;}
+}
+</style>
+</head>
+<body>
+<header>
+<h1>Songwriter</h1>
+<div class="controls">
+<label>Key <select id="keySelect"></select></label>
+<label>Scale <select id="scaleSelect"><option>Major</option><option>Minor</option><option>Dorian</option><option>Mixolydian</option></select></label>
+<label>BPM <input type="number" id="bpm" value="120" style="width:60px"></label>
+<label>Quantize <select id="quantize"><option value="0">Off</option><option value="0.5">1/8</option><option value="0.25">1/16</option><option value="0.125">1/32</option></select></label>
+<label>Swing <input type="range" id="swing" min="0" max="0.5" step="0.01" value="0"></label>
+<button id="play">Play</button>
+<button id="record">Record</button>
+<button id="metronome">Metronome</button>
+</div>
+</header>
+<main>
+<section id="melodicPads" aria-label="Chord and note pads"></section>
+<section id="drumPads" aria-label="Drum launchpad"></section>
+</main>
+<div id="timeline"></div>
+<div class="controls" style="padding:10px">
+<button id="exportJSON">Export JSON</button>
+<button id="importJSON">Import JSON</button>
+<input type="file" id="importFile" style="display:none">
+<button id="exportMIDI">Export MIDI</button>
+<button id="exportWAV">Export WAV</button>
+</div>
+<script>
+// Simple utilities
+const app = {};
+function el(tag,attrs={},...children){const e=document.createElement(tag);for(const k in attrs){if(k==='class')e.className=attrs[k];else if(k==='html')e.innerHTML=attrs[k];else e.setAttribute(k,attrs[k]);}children.forEach(c=>{if(typeof c==='string')e.appendChild(document.createTextNode(c));else if(c)e.appendChild(c);});return e;}
+
+/* THEORY MODULE */
+app.theory = (function(){
+const notes=['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+const scales={
+  'Major':[0,2,4,5,7,9,11],
+  'Minor':[0,2,3,5,7,8,10],
+  'Dorian':[0,2,3,5,7,9,10],
+  'Mixolydian':[0,2,4,5,7,9,10]
+};
+function noteNumber(name){return notes.indexOf(name);} 
+function noteName(num){return notes[(num+12)%12];}
+function buildScale(root,scale){const r=noteNumber(root);return scales[scale].map(i=>noteName(i+r));}
+function chord(root,quality,voicing){ // returns MIDI note numbers for chord
+ const r=noteNumber(root);
+ let intervals=[];
+ switch(quality){
+   case 'I': intervals=[0,4,7];break;
+   case 'V': intervals=[0,4,7];break;
+   case 'vi': intervals=[0,3,7];break;
+   case 'IV': intervals=[0,4,7];break;
+   case 'ii': intervals=[0,3,7];break;
+   case 'iii': intervals=[0,3,7];break;
+   case 'vii°': intervals=[0,3,6];break;
+   case 'sus2': intervals=[0,2,7];break;
+   case 'sus4': intervals=[0,5,7];break;
+   case 'maj7': intervals=[0,4,7,11];break;
+   case 'min7': intervals=[0,3,7,10];break;
+   case 'add9': intervals=[0,4,7,14];break;
+ }
+ let base=60+r; // middle C offset
+ const notes=intervals.map(i=>base+i);
+ if(voicing==='spread' && notes.length>=3){notes[0]-=12; // bass
+ }
+ return notes;
+}
+return{notes,buildScale,chord,noteNumber,noteName};
+})();
+
+/* AUDIO MODULE */
+app.audio = (function(){
+const ctx=new (window.AudioContext||window.webkitAudioContext)();
+const master=ctx.createGain();master.gain.value=0.8;master.connect(ctx.destination);
+const metGain=ctx.createGain();metGain.gain.value=0;metGain.connect(master);
+function metronome(time){const osc=ctx.createOscillator();const g=ctx.createGain();osc.frequency.value=1000;g.gain.value=1;osc.connect(g).connect(metGain);osc.start(time);g.gain.exponentialRampToValueAtTime(0.001,time+0.1);osc.stop(time+0.1);}
+const voices={
+  lead:{type:'sawtooth'},
+  backing:{type:'square'},
+  bass:{type:'sawtooth'},
+  guitar:{type:'triangle'},
+  synth:{type:'sine'}
+};
+function playNote(type,note,velocity,time,duration){const v=voices[type]||voices.lead;const osc=ctx.createOscillator();osc.type=v.type;osc.frequency.value=440*Math.pow(2,(note-69)/12);const g=ctx.createGain();g.gain.setValueAtTime(0.0001,time);g.gain.linearRampToValueAtTime(velocity/127,time+0.01);g.gain.setValueAtTime(velocity/127,time+duration-0.05);g.gain.exponentialRampToValueAtTime(0.0001,time+duration);osc.connect(g).connect(master);osc.start(time);osc.stop(time+duration);
+}
+// Drum synths
+function playKick(time,velocity){const osc=ctx.createOscillator();osc.type='sine';const g=ctx.createGain();osc.connect(g).connect(master);osc.frequency.setValueAtTime(120,time);osc.frequency.exponentialRampToValueAtTime(40,time+0.5);g.gain.setValueAtTime(velocity/127,time);g.gain.exponentialRampToValueAtTime(0.001,time+0.5);osc.start(time);osc.stop(time+0.5);}
+function playSnare(time,velocity){const noise=ctx.createBufferSource();const buffer=ctx.createBuffer(1,ctx.sampleRate*0.2,ctx.sampleRate);const data=buffer.getChannelData(0);for(let i=0;i<data.length;i++)data[i]=Math.random()*2-1;noise.buffer=buffer;const bp=ctx.createBiquadFilter();bp.type='bandpass';bp.frequency.value=1800;const g=ctx.createGain();g.gain.setValueAtTime(velocity/127,time);g.gain.exponentialRampToValueAtTime(0.01,time+0.2);noise.connect(bp).connect(g).connect(master);noise.start(time);noise.stop(time+0.2);}
+function playHat(time,velocity,open){const noise=ctx.createBufferSource();const buffer=ctx.createBuffer(1,ctx.sampleRate*0.05,ctx.sampleRate);const data=buffer.getChannelData(0);for(let i=0;i<data.length;i++)data[i]=Math.random()*2-1;noise.buffer=buffer;const hp=ctx.createBiquadFilter();hp.type='highpass';hp.frequency.value=7000;const g=ctx.createGain();g.gain.setValueAtTime(velocity/127,time);g.gain.exponentialRampToValueAtTime(0.01,time+(open?0.3:0.05));noise.connect(hp).connect(g).connect(master);noise.start(time);noise.stop(time+(open?0.3:0.05));}
+const drumMap={kick:playKick,snare:playSnare,closedhat:(t,v)=>playHat(t,v,false),openhat:(t,v)=>playHat(t,v,true)};
+return{ctx,playNote,metronome,drumMap,metGain};
+})();
+
+/* MIDI MODULE */
+app.midi=(function(){
+const state={outputs:[],enabled:false};
+if(navigator.requestMIDIAccess){navigator.requestMIDIAccess().then(midi=>{state.enabled=true;state.outputs=[...midi.outputs.values()];updateOutputs();});}else{
+ console.log('No MIDI');
+}
+function updateOutputs(){const sel=document.getElementById('midiOut');if(!sel)return;sel.innerHTML='<option value="">No Output</option>';state.outputs.forEach((o,i)=>sel.appendChild(el('option',{value:i,html:o.name})));
+}
+function send(type,channel,data1,data2){if(!state.enabled)return;const out=state.outputs[state.selected];if(!out)return;out.send([type|channel,data1,data2||0]);}
+function noteOn(channel,note,vel){send(0x90,channel,note,vel);} 
+function noteOff(channel,note){send(0x80,channel,note,0);} 
+function program(channel,program){send(0xC0,channel,program,0);} 
+return{state,noteOn,noteOff,program};
+})();
+
+/* SCHEDULER & TRANSPORT */
+app.transport=(function(){
+const {ctx,metronome}=app.audio;
+let tempo=120;let lookahead=25;let scheduleAhead=0.1;let currentBeat=0;let nextNoteTime=0;let playing=false;let tickInterval;let swing=0;let metOn=false;
+function nextBeat(){const secPerBeat=60/tempo;nextNoteTime+=secPerBeat;currentBeat++;}
+function scheduler(){while(nextNoteTime<ctx.currentTime+scheduleAhead){if(metOn && currentBeat%1===0)metronome(nextNoteTime);
+ app.recorder.playEvents(currentBeat,nextNoteTime);
+ nextBeat();}}
+function start(){if(playing)return;playing=true;currentBeat=0;nextNoteTime=ctx.currentTime;tickInterval=setInterval(scheduler,lookahead);} 
+function stop(){playing=false;clearInterval(tickInterval);} 
+return{start,stop,setTempo:t=>tempo=t,setSwing:s=>swing=s,get time(){return currentBeat;},toggleMet:()=>{metOn=!metOn;app.audio.metGain.gain.value=metOn?1:0;}};
+})();
+
+/* RECORDER */
+app.recorder=(function(){
+const tracks={melody:[],backing:[],bass:[],guitar:[],synth:[],drums:[]};
+let recording=false;let recordStart=0;function start(){recording=true;recordStart=app.transport.time;} function stop(){recording=false;}
+function record(track,note,velocity){if(!recording)return;const time=app.transport.time-recordStart;tracks[track].push({time,note,velocity});renderClip(track);}
+function playEvents(beat,playTime){for(const name in tracks){tracks[name].forEach(ev=>{const t=ev.time;const dur=0.5; // fixed
+ if(Math.abs(t-beat)<0.001){app.audio.playNote(name==='drums'?'lead':name,ev.note,ev.velocity,playTime,dur);} });}}
+function renderClip(track){const lane=document.querySelector(`.track[data-track="${track}"] .track-content`);if(!lane)return;lane.innerHTML='';tracks[track].forEach(ev=>{const c=el('div',{class:'clip',style:`left:${ev.time*60}px;width:30px;`},track);lane.appendChild(c);});}
+return{start,stop,record,tracks,playEvents};
+})();
+
+/* UI SETUP */
+(function(){
+const keys=app.theory.notes;const keySel=document.getElementById('keySelect');keys.forEach(k=>keySel.appendChild(el('option',{html:k})));
+keySel.value='C';
+const scaleSel=document.getElementById('scaleSelect');
+function buildPads(){const container=document.getElementById('melodicPads');container.innerHTML='';const key=keySel.value;const scale=scaleSel.value;const chords=['I','V','vi','IV','ii','iii','vii°','sus2','sus4','maj7','min7','add9'];chords.forEach(ch=>{const b=el('button',{class:'pad',html:ch,role:'button','aria-label':ch});b.addEventListener('mousedown',()=>{
+ const notes=app.theory.chord(app.theory.noteName(app.theory.noteNumber(key)),ch,'basic');notes.forEach(n=>app.audio.playNote('lead',n,100,app.audio.ctx.currentTime,0.5));app.recorder.record('melody',notes[0],100);
+});container.appendChild(b);});
+}
+keySel.onchange=buildPads;scaleSel.onchange=buildPads;buildPads();
+// Drum pads
+const drumNames=['Kick','Snare','Closed Hat','Open Hat'];const drumContainer=document.getElementById('drumPads');drumNames.forEach(name=>{const b=el('button',{class:'pad',html:name});b.addEventListener('mousedown',()=>{const t=app.audio.ctx.currentTime;switch(name){case 'Kick':app.audio.drumMap.kick(t,120);break;case 'Snare':app.audio.drumMap.snare(t,120);break;case 'Closed Hat':app.audio.drumMap.closedhat(t,100);break;case 'Open Hat':app.audio.drumMap.openhat(t,100);break;}app.recorder.record('drums',60,100);});drumContainer.appendChild(b);});
+// Timeline
+const tracks=['melody','backing','bass','guitar','synth','drums'];const timeline=document.getElementById('timeline');tracks.forEach(t=>{const row=el('div',{class:'track',"data-track":t});row.appendChild(el('div',{class:'track-label',html:t}));row.appendChild(el('div',{class:'track-content'}));timeline.appendChild(row);});
+// Transport controls
+const playBtn=document.getElementById('play');playBtn.onclick=()=>{if(app.transport.playing){app.transport.stop();playBtn.textContent='Play';}else{app.transport.start();playBtn.textContent='Stop';}};
+const recBtn=document.getElementById('record');recBtn.onclick=()=>{if(app.recorder.recording){app.recorder.stop();recBtn.textContent='Record';}else{app.recorder.start();recBtn.textContent='Stop Rec';}};
+document.getElementById('metronome').onclick=()=>app.transport.toggleMet();
+document.getElementById('bpm').onchange=e=>app.transport.setTempo(+e.target.value);
+})();
+
+</script>
+</body>
+</html>
