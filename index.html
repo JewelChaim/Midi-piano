@@ -113,7 +113,26 @@ const voices={
   guitar:{type:'triangle'},
   synth:{type:'sine'}
 };
-function playNote(type,note,velocity,time,duration){const v=voices[type]||voices.lead;const osc=ctx.createOscillator();osc.type=v.type;osc.frequency.value=440*Math.pow(2,(note-69)/12);const g=ctx.createGain();g.gain.setValueAtTime(0.0001,time);g.gain.linearRampToValueAtTime(velocity/127,time+0.01);g.gain.setValueAtTime(velocity/127,time+duration-0.05);g.gain.exponentialRampToValueAtTime(0.0001,time+duration);osc.connect(g).connect(master);osc.start(time);osc.stop(time+duration);
+const trackNames=['melody','backing','bass','guitar','synth','drums'];
+const trackBuses={};
+const trackVoices={melody:'lead',backing:'backing',bass:'bass',guitar:'guitar',synth:'synth',drums:'lead'};
+trackNames.forEach(name=>{
+ const gain=ctx.createGain();
+ const pan=ctx.createStereoPanner();
+ let filter=null;
+ if(name==='drums'){
+  filter=ctx.createBiquadFilter();filter.type='highpass';filter.frequency.value=120;gain.connect(filter);filter.connect(pan);
+ }else if(name==='bass'){
+  filter=ctx.createBiquadFilter();filter.type='lowpass';filter.frequency.value=500;gain.connect(filter);filter.connect(pan);
+ }else{
+  gain.connect(pan);
+ }
+ pan.connect(master);
+ trackBuses[name]={gain,pan,filter,volume:1,mute:false,solo:false};
+});
+function updateTrackGains(){const soloed=trackNames.some(n=>trackBuses[n].solo);trackNames.forEach(n=>{const b=trackBuses[n];const active=(!soloed||b.solo)&&!b.mute;b.gain.gain.value=active?b.volume:0;});}
+function setTrackVoice(track,voice){trackVoices[track]=voice;if(app.midi&&app.midi.state.enabled){const midiPrograms={lead:0,backing:48,bass:32,guitar:24,synth:80};const channel=trackNames.indexOf(track);const prog=midiPrograms[voice]||0;app.midi.program(channel,prog);}}
+function playNote(track,note,velocity,time,duration){const v=voices[trackVoices[track]]||voices.lead;const osc=ctx.createOscillator();osc.type=v.type;osc.frequency.value=440*Math.pow(2,(note-69)/12);const g=ctx.createGain();g.gain.setValueAtTime(0.0001,time);g.gain.linearRampToValueAtTime(velocity/127,time+0.01);g.gain.setValueAtTime(velocity/127,time+duration-0.05);g.gain.exponentialRampToValueAtTime(0.0001,time+duration);osc.connect(g).connect(trackBuses[track].gain);osc.start(time);osc.stop(time+duration);
 }
 // Drum synths
 function playKick(time,velocity){const osc=ctx.createOscillator();osc.type='sine';const g=ctx.createGain();osc.connect(g).connect(master);osc.frequency.setValueAtTime(120,time);osc.frequency.exponentialRampToValueAtTime(40,time+0.5);g.gain.setValueAtTime(velocity/127,time);g.gain.exponentialRampToValueAtTime(0.001,time+0.5);osc.start(time);osc.stop(time+0.5);}
@@ -127,7 +146,7 @@ function playRide(time,velocity){playHat(time,velocity,true);}
 function playCrash(time,velocity){playHat(time,velocity,true);}
 function playShaker(time,velocity){playHat(time,velocity,false);}
 function playTamb(time,velocity){playHat(time,velocity,false);}
-function playCowbell(time,velocity){const osc1=ctx.createOscillator();const osc2=ctx.createOscillator();osc1.type=osc2.type='square';const g=ctx.createGain();osc1.frequency.value=540;osc2.frequency.value=800;osc1.connect(g);osc2.connect(g);g.connect(master);g.gain.setValueAtTime(velocity/127,time);g.gain.exponentialRampToValueAtTime(0.001,time+0.2);osc1.start(time);osc2.start(time);osc1.stop(time+0.2);osc2.stop(time+0.2);}
+function playCowbell(time,velocity){const osc1=ctx.createOscillator();const osc2=ctx.createOscillator();osc1.type=osc2.type='square';const g=ctx.createGain();osc1.frequency.value=540;osc2.frequency.value=800;osc1.connect(g);osc2.connect(g);g.connect(trackBuses.drums.gain);g.gain.setValueAtTime(velocity/127,time);g.gain.exponentialRampToValueAtTime(0.001,time+0.2);osc1.start(time);osc2.start(time);osc1.stop(time+0.2);osc2.stop(time+0.2);}
 const drumMap={kick:playKick,snare:playSnare,closedhat:(t,v)=>playHat(t,v,false),openhat:(t,v)=>playHat(t,v,true),tomh:(t,v)=>playTom(t,v,180),tomm:(t,v)=>playTom(t,v,140),toml:(t,v)=>playTom(t,v,100),clap:playClap,rim:playRim,ride:playRide,crash:playCrash,shaker:playShaker,tamb:playTamb,cowbell:playCowbell};
 return{ctx,playNote,metronome,drumMap,metGain,startOpenHat};
 })();
@@ -240,7 +259,7 @@ const chordContainer=document.getElementById('chordPads');
 const noteContainer=document.getElementById('notePads');
 function getVelocity(){return +velocitySlider.value;}
 function formatChordLabel(root,quality){switch(quality){case 'vi':case 'ii':case 'iii':return root+'m';case 'vii°':return root+'dim';case 'sus2':case 'sus4':case 'maj7':case 'min7':case 'add9':return root+quality;default:return root;}}
-function buildPads(){chordContainer.innerHTML='';noteContainer.innerHTML='';const key=keySel.value;const scaleName=scaleSel.value;const scale=app.theory.buildScale(key,scaleName);const chords=['I','V','vi','IV','ii','iii','vii°','sus2','sus4','maj7','min7','add9'];const degreeMap={I:0,V:4,vi:5,IV:3,ii:1,iii:2,'vii°':6};chords.forEach(ch=>{const degree=degreeMap[ch]!==undefined?degreeMap[ch]:0;const root=scale[degree];const label=formatChordLabel(root,ch);const b=el('button',{class:'pad',html:label,role:'button','aria-label':label});b.addEventListener('mousedown',()=>{const notes=app.theory.chord(root,ch,'basic');notes.forEach(n=>app.audio.playNote('lead',n,getVelocity(),app.audio.ctx.currentTime,0.5));app.recorder.record('melody',notes[0],getVelocity());});chordContainer.appendChild(b);});scale.forEach(n=>{const b=el('button',{class:'pad',html:n});b.addEventListener('mousedown',()=>{const midi=60+app.theory.noteNumber(n);app.audio.playNote('lead',midi,getVelocity(),app.audio.ctx.currentTime,0.5);app.recorder.record('melody',midi,getVelocity());});noteContainer.appendChild(b);});}
+function buildPads(){chordContainer.innerHTML='';noteContainer.innerHTML='';const key=keySel.value;const scaleName=scaleSel.value;const scale=app.theory.buildScale(key,scaleName);const chords=['I','V','vi','IV','ii','iii','vii°','sus2','sus4','maj7','min7','add9'];const degreeMap={I:0,V:4,vi:5,IV:3,ii:1,iii:2,'vii°':6};chords.forEach(ch=>{const degree=degreeMap[ch]!==undefined?degreeMap[ch]:0;const root=scale[degree];const label=formatChordLabel(root,ch);const b=el('button',{class:'pad',html:label,role:'button','aria-label':label});b.addEventListener('mousedown',()=>{const notes=app.theory.chord(root,ch,'basic');notes.forEach(n=>app.audio.playNote('melody',n,getVelocity(),app.audio.ctx.currentTime,0.5));app.recorder.record('melody',notes[0],getVelocity());});chordContainer.appendChild(b);});scale.forEach(n=>{const b=el('button',{class:'pad',html:n});b.addEventListener('mousedown',()=>{const midi=60+app.theory.noteNumber(n);app.audio.playNote('melody',midi,getVelocity(),app.audio.ctx.currentTime,0.5);app.recorder.record('melody',midi,getVelocity());});noteContainer.appendChild(b);});}
 keySel.onchange=buildPads;scaleSel.onchange=buildPads;buildPads();
 // Drum pads
 const drums=[
